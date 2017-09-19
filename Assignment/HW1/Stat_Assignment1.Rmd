@@ -200,7 +200,7 @@ infold = sample(rep(1:nfold, length.out=length(x)))
 
 mydata = data.frame(x = x, y = y)
 
-K = 1000 # maximum number of k that I am considering
+K = 50 # maximum number of k that I am considering
 errorMatrix = matrix(NA, K, nfold) # save the prediction error of each fold
 
 for (l in 1:nfold)
