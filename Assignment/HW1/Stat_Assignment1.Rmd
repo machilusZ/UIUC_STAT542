@@ -1,0 +1,216 @@
+---
+title: "Stat542 Assignment1"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+options(width = 1000)
+```
+
+## Yunan Zhang
+##yunanz2@illinois.edu
+
+\section{Problem 1}
+
+```{r}
+  library(MASS)
+  set.seed(1)
+  P = 4
+  N = 200
+  rho = 0.5
+  V <- rho^abs(outer(1:P, 1:P, "-"))
+  #mvrnorm(n, mu, Sigma, tol, empirical)
+  #n:num of sample(rows of data), mu: a vector giving means of 
+  #var, sigma: pos-def sym matrix specifying cov matrix of var
+  X = as.matrix(mvrnorm(N, mu=rep(0,P), Sigma=V))
+  beta = as.matrix(c(1, 1, 0.5, 0.5))
+  Y = X %*% beta + rnorm(N)
+  #Q1.a
+  #calculate variance-corvariance matrix
+  k = ncol(X)
+  n = nrow(X)
+  
+  #create means for each column
+  X_mean = matrix(data=1, nrow = n)%*% cbind(mean(X[,1]),mean(X[,2]),mean(X[,3]),mean(X[,4]))
+  
+  #create a difference matrix
+  D = X - X_mean
+  
+  #create covariance matrix
+  C = (n -1)^(-1) %*% t(D) %*% D
+  #C^-(1/2)
+  C_sqrt = C %^% (-1/2)
+  #Q1.b
+  mydist <- function(x1, x2) {
+    return (sqrt(sum((x1-x2)^2)))
+  }
+  x = as.matrix(c(0.5,0.5,0.5,0.5))
+  dist_matrix = matrix(nrow = N, ncol = 3);
+  for(i in 1 : 200) {
+    dist_matrix[i,1] = mydist(x, X[i,])
+    dist_matrix[i,2] = i
+    dist_matrix[i,3] = Y[i,1]
+    dist_matrix[i,4] = Y[i,2]
+    dist_matrix[i,5] = Y[i,3]
+    dist_matrix[i,6] = Y[i,4]
+  }
+  #rearrage the distance matrix, put five smallest distance
+  #row on the top of the vector
+  dist_matrix[order(dist_matrix[,1], increasing = T)[1:5],]
+  for(i in 1:5) {
+    print(dist_matrix[i,2]) 
+  }
+  #5-NN extimation at the target point
+  Y_5nn = matrix(nrow =1, ncol = 4)
+  for (i in 1 : 4) {
+    mean = 0
+    for (j in 1 :5) {
+      mean = mean + dist_matrix[j, i+2]
+    }
+    Y_5nn[1,i] = mean/5
+  }
+  
+  #1.c
+  mydist2 <- function(x1, x2, s) {
+    return(sqrt(t(x1%-%x2)%*%(s%^%(-1))%*%(x1%-%x2)))
+  }
+  x = as.matrix(c(0.5,0.5,0.5,0.5))
+  dist_matrix = matrix(nrow = N, ncol = 3);
+  for(i in 1 : 200) {
+    dist_matrix[i,1] = mydist2(x, X[i,])
+    dist_matrix[i,2] = i
+    dist_matrix[i,3] = Y[i,1]
+    dist_matrix[i,4] = Y[i,2]
+    dist_matrix[i,5] = Y[i,3]
+    dist_matrix[i,6] = Y[i,4]
+  }
+  #rearrage the distance matrix, put five smallest distance
+  #row on the top of the vector
+  dist_matrix[order(dist_matrix[,1], increasing = T)[1:5],]
+  for(i in 1:5) {
+    print(dist_matrix[i,2]) 
+  }
+  #5-NN extimation at the target point
+  Y_5nn = matrix(nrow =1, ncol = 4)
+  for (i in 1 : 4) {
+    mean = 0
+    for (j in 1 :5) {
+      mean = mean + dist_matrix[j, i+2]
+    }
+    Y_5nn[1,i] = mean/5
+  }
+  #1.d
+  
+  ################Question 2####################
+  #2.a. degree of freedom $= \sum_{i=1}^{n}Cov(\hat{y_i}^sigma^2)$
+  # $=\sum_{i=1}^{n}\frac{\sigma^2}{k}\times\frac{1}{\sigma^2}=\sum_{i-1}^{n}\frac{1}{k}=\frac{n}{k}$
+  #since k =5 here, df will be $n/5$
+  
+  #2.b
+  set.seed(1)
+  n = 200
+  x1 = rnorm(n, mean =0, sd =1)
+  x2 = rnorm(n, mean =0, sd =1)
+  x3 = rnorm(n, mean =0, sd =1)
+  x4 = rnorm(n, mean =0, sd =1)
+  x = data.frame(x1, x2, x3, x4)
+  head(x, n =5L)
+  
+  #define the mean of Y. I'm lazy, so just assume mean of Y is sum of x divided by 4
+  y_mean = as.matrix(x)%*% rep(.25,4)
+  y_exp = head(y_mean, n = 5L)
+  t(data.frame(y_exp))
+  
+  #generate response and predict
+  set.seed(1)
+  y =y_mean + rnorm(n, mean = 0, sd = 1)
+  knn_zyn = kknn(y~as.matrix(x), train=data.frame(as.matrix(x),y),test=data.frame(as.matrix(x),y),k=5,kernel="rectangular")
+  y_est = as.matrix(knn_zyn$fitted.values)
+  y_prediction = head(y_est, n=5L)
+  t(data.frame(y_prediction))
+  #repeat 20 times
+  set.seed(1)
+  y.matrix = matrix(data = NA, nrow=n, ncol = 20)
+  y_est.matrix = matrix = matrix(data = NA, nro=n, ncol=20)
+  for(i in 1:20) {
+    y.loop = y_mean + rnorm(n, mean = 0, sd =1)
+    y.matrix[,i] = y.loop
+    knn_zynf = kknn(y.loop ~ as.matrix(x),train =
+                     data.frame(as.matrix(x),y.loop),test=data.frame(as.matrix(x),y.loop),k=5,kernel="rectangular")
+    y_est.matrix[,i]=knn_zynf$fitted.values
+  }
+  df = sum(diag(cov(t(y.matrix), t(y_est.matrix))))/1
+  
+  #compare
+  #repeat 100 times
+  y.matrix_100 = matrix(data=NA, nrow=n, ncol=100)
+  y_est.matrix_100 = matrix(data=NA, nrow=n,ncol=100)
+  for(i in i:100) {
+    y.loop_100 = y_mean + rnorm(n, mean =0, sd =1)
+    y.matrix_100[,i] = y.loop_100
+    knn_100 = kknn(y.loop_100 ~ as.matrix(x),train=data.frame(as.matrix(x),y.loop_100),
+                                                              test=data.frame(as.matrix(x),y.loop_100),k=5,
+                                                              kernel="rectangular")
+    y_est.matrix_100[,i] = knn_100$fitted.values
+  }
+  df_100 = sum(diag(cov(t(y.matrix_100),t(y_est.matrix_100))))/1
+  
+  #repeat 150 times
+  y.matrix_150 = matrix(data=NA, nrow=n, ncol=150)
+  y_est.matrix_150 = matrix(data=NA, nrow=n,ncol=150)
+  for(i in i:150) {
+    y.loop_150 = y_mean + rnorm(n, mean =0, sd =1)
+    y.matrix_150[,i] = y.loop_150
+    knn_150 = kknn(y.loop_150 ~ as.matrix(x),train=data.frame(as.matrix(x),y.loop_150),
+                                                              test=data.frame(as.matrix(x),y.loop_150),k=5,
+                                                              kernel="rectangular")
+    y_est.matrix_150[,i] = knn_150$fitted.values
+  }
+  df_150 = sum(diag(cov(t(y.matrix_100),t(y_est.matrix_100))))/1
+  #conclusion: The more time we repeat our generation, the closer df get to its theoretical value.
+  #2.c
+  #assume x has p features, then df = p - 1 
+   ################Question 3####################
+library(kknn)
+library(ElemStatLearn)
+
+SAheart = SAheart;
+
+# generate training data with 2*sin(x) and random Gaussian errors
+x <- SAheart[,c("age", "tobacco")]
+y <- SAheart[,c("chd")]
+# 10 fold cross validation
+
+nfold = 10
+infold = sample(rep(1:nfold, length.out=length(x)))
+
+mydata = data.frame(x = x, y = y)
+
+K = 50 # maximum number of k that I am considering
+errorMatrix = matrix(NA, K, nfold) # save the prediction error of each fold
+
+for (l in 1:nfold)
+{
+	for (k in 1:K)
+	{
+		knn.fit = kknn(y ~ x, train = mydata[infold != l, ], test = mydata[infold == l, ], k = k)
+		errorMatrix[k, l] = mean((knn.fit$fitted.values - mydata$y[infold == l])^2)
+	}
+}
+
+# plot the results
+plot(rep(1:K, nfold), as.vector(errorMatrix), pch = 19, cex = 0.5)
+points(1:K, apply(errorMatrix, 1, mean), col = "red", pch = 19, type = "l", lwd = 3)
+
+# which k is the best?
+which.min(apply(errorMatrix, 1, mean))
+  
+  
+
+
+
