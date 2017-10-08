@@ -1,0 +1,206 @@
+---
+title: "Stat542_Proj2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+1.a
+The first is to seperate the data we need from the original data set, on which we validate, train and test our model.
+```{r}
+library(MASS)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+#read data
+btc_data = read.csv("bitcoin_dataset.csv")
+#Form training sets and test tests 
+btc_data$Date = as.POSIXct(btc_data$Date, format='%Y-%m-%d %H:%M:%S')
+btc_useful = btc_data %>%
+  #remove data we don't use
+  filter(Date <= ymd('2017-09-12'))%>%
+  #mark training set
+  mutate(flag = Date < ymd('2017-1-1'))%>%
+  #since we don't use btc_trade_volume, remove it here
+  select(-btc_trade_volume)
+#We plot the trend to see the changing trend
+ggplot(data = btc_useful,aes(x=Date,y=btc_market_price,color=flag)) + geom_line()
+#also, we see the btc_market_price misses a lot of data in 2010 so we discard this part of data
+btc_useful = btc_useful %>%
+  filter(Date >= ymd('2016-01-01'))
+#split training set, we don't need flag and target varible appear in X
+training_set = filter(btc_useful, flag == TRUE)
+y_train = select(training_set, btc_market_price)
+x_train = select(training_set, -c(btc_market_price, flag))
+training_set = as_tibble(cbind(x_train, y_train))
+
+#split test set
+test_set = filter(btc_useful, flag == FALSE)
+y_test = select(test_set, btc_market_price)
+x_test = select(test_set, -c(btc_market_price, flag))
+test_set = as_tibble(cbind(x_test, y_test))
+
+```
+
+
+
+Then we try to fit the trainning data to find the best model of each size
+```{r pressure, echo=TRUE}
+library(tidyr)
+library(leaps)
+fitted_subset = regsubsets(btc_market_price ~., data = training_set, nvmax = ncol(training_set) - 1)
+#Then we try to visualize the fitting in every iteration
+#First we try to generate a table contains variable name and the number corresponding to its selection
+selection_data = as_tibble(summary(fitted_subset)$which)%>%
+  gather(key=variable_name, value = selected) %>%
+  filter(variable_name!='(Intercept)')%>%
+  mutate(selected=as.numeric(selected))%>%
+  group_by(variable_name) %>%
+  summarise(sum_select = sum(selected))
+#Then we try to form a table, whose row is subset and column represents variables.
+sub_var = as_tibble(summary(fitted_subset)$which)
+select_order = stats$variable_name[order(selection_data$sum_select)]
+n_rows = nrow(sub_var)
+n_cols = ncol(sub_var)
+grid_data = sub_var %>%
+  gather(key = variable_name, value = included) %>%
+  mutate(step_number = rep(1:n_rows, n_cols))%>%
+  filter(variable_name != factor(variable_name, levels = select_order))
+
+ggplot(grid_data, aes(x = step_number, y = variable_name, fill = included)) + geom_tile(color = 'blue', size = 0.5) + xlab('Number of variables') + 
+  theme(panel.border = element_rect(size = 2), plot.title = element_text(size = rel(1.2)), axis.text.x = element_blank(),axis.title.y = element_blank(),axis.ticks = element_blank(), axis.line = element_blank(), axis.text.y = element_text(size = 7), legend.position = "right")
+
+```
+Clearly, two most variables are btc_market_cap and btc_estimated_transaction_volume in prediction of btc_market_price.
+1.b
+```{r}
+which_variables = function(fitted_subset, n_variable =1, intercept.rm = TRUE) {
+  sumsubset = summary(fitted_subset)
+  selected_var = names(which(sumsubset$which[n_variable,]))
+  if(intercept.rm) {
+    selected_var = selected_var[2:length(selected_var)]
+  }
+  selected_var
+}
+#Then we try to determine the best subset
+#So, how should we define "best"? We predefine 4 criteria while picking the best subset: AIC, BIC, or Cp
+subset_aic = function(sumsubset,n_samples){
+  modle_size = apply(sumsubset$which, 1, sum)
+  n_samples * log(sumsubset$rss / n_samples) + 2*model_size
+}
+best_subset = function(fitted_subset, n_samples = NULL, criteria = 'AIC') {
+  sumsubset = summary(fitted_subset)
+  if(criteria =='AIC') {
+    if(is.null(n_samples)) {
+      stop('n_samples necessary for AIC criteria.')
+    }
+    n_variables = which.min(subset_aic(sumsubset, n_samples))
+  }
+  else if (criteria == 'Cp') {
+    n_variables = which.min(sumsubset$cp)
+  }
+  else if (criteria == 'BIC') {
+    n_variables = which.min(sumsubset$bic)
+  } else {
+    stop('Unrecoginized criteria. Must be one of AIC, BIC, Cp.')
+  }
+  n_variables
+}
+
+#Then we combine the functions into a method that fits a linear model based on the best subset for a given cirteria.
+bestsubset_lm = function(fitted_subset, target_var, data, criteria = 'AIC') {
+  n_variable = best_subset(fitted_subset , n_samples = nrow(data), criteria = criteria) 
+    #actually extract the predictor names from the subset
+  predictors = which_variables(fitted_subset , n_variable = n_variables)
+  target_str = paste(target_var, "~", sep =" ")
+  predictor_str = paste(predictors, collapse = "+")
+  formula_str = paste(target_str,predictor_str, sep =" ")
+  formula = as.formula(formula_str)
+  lm(formula, data = data)
+}
+  
+```
+Since we need to report the predictors used by each model, I also defined a function that extracts the predictors from a fitted linear regression model. I hid it from the report but you can find it in the accompying markdown.
+```{r}
+#' Print the predictors used in a model
+print_predictors <- function(model) {
+  predictors <- attr(model$terms, 'term.labels')
+  n_predictors <- length(predictors)
+  
+  number_str <- paste(n_predictors, "variables used in this model:", sep = " ")
+  predictor_str <- paste(predictors, collapse = "\n\t")
+  
+  cat(paste(number_str, predictor_str, sep = '\n\t'))
+}
+#Putting this all together we can fit 4 models: the model using all of the predictors and the best model according AIC, BIC and Mallow's $C_p$.
+# model with all variables
+model_full <- lm(btc_market_price ~ ., data = bitcoin_train)
+
+# AIC 
+model_aic <- bestsubset_lm(subset_fit, target_var = 'btc_market_price', 
+                           data = bitcoin_train, 
+                           criteria = "AIC")
+
+print_predictors(model_aic)
+
+# BIC
+model_bic <- bestsubset_lm(subset_fit, target_var = 'btc_market_price', 
+                           data = bitcoin_train, 
+                           criteria = "BIC")
+
+print_predictors(model_bic)
+
+# Mallow's Cp
+model_cp <- bestsubset_lm(subset_fit, target_var = 'btc_market_price', 
+                          data = bitcoin_train, 
+                          criteria = "Cp")
+
+print_predictors(model_cp)
+train_test_curves(train = bitcoin_train, test = bitcoin_test, 
+                  target_var = 'btc_market_price', date_var = 'date',
+                  metric = "MSE",
+                  model_aic, model_bic, model_cp)
+```
+1.(c)
+c) Redo a) and b) using log(1 + Y) as the outcome. Report the best models. Then for prediction, transform the predicted values into the original scale and report the prediction error of each model.
+
+We start be re-fitting the best-subset selection algorithm to the log-transformed response. However, I am also going to log-transform btc_market_cap since we want to preserve what was already a roughly linear relationship. Again I also visualized the variables selected in each subset.
+
+```{r}
+
+
+subset_fit <- regsubsets(
+    log(btc_market_price + 1) ~ . + log(btc_market_cap + 1) - btc_market_cap, 
+    data = bitcoin_train, 
+    nvmax = ncol(bitcoin_train) - 1)
+
+subset_waffleplot(subset_fit)
+ AIC
+log_model_aic <- bestsubset_lm(subset_fit, target_var = 'log(btc_market_price + 1)', 
+                               data = bitcoin_train, 
+                               criteria = "AIC")
+
+print_predictors(log_model_aic)
+
+# BIC
+log_model_bic <- bestsubset_lm(subset_fit, target_var = 'log(btc_market_price + 1)', 
+                               data = bitcoin_train, 
+                               criteria = "BIC")
+
+print_predictors(log_model_bic)
+
+# Mallow's Cp
+log_model_cp <- bestsubset_lm(subset_fit, target_var = 'log(btc_market_price + 1)', 
+                              data = bitcoin_train, 
+                              criteria = "Cp")
+
+print_predictors(log_model_cp)
+train_test_curves(train = bitcoin_train, test = bitcoin_test, 
+                  target_var = 'btc_market_price', 
+                  y_transform = function(x) { exp(x) - 1 },
+                  date_var = 'date', metric = 'MSE',
+                  log_model_aic, log_model_bic, log_model_cp)
+```
+
+The performance is definitely worse for the log-response compared to the previous fit. The most likely reason is that a few predictors are proxies for the response (we are fitting this series way to well), so the logarithmic transform is destroying their linear relationship. This was the reason why I also log-transformed btc_market_cap.
